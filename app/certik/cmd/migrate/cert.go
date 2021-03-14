@@ -1,8 +1,8 @@
 package migrate
 
 import (
-	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	"github.com/gogo/protobuf/proto"
 
@@ -62,22 +62,6 @@ const (
 	RequestContentTypeGeneral
 )
 
-// CertificateID is the type for the ID of a certificate.
-type CertificateID string
-
-// Bytes returns the byte array for a certificate ID.
-func (id CertificateID) Bytes() []byte {
-	decoded, err := hex.DecodeString(id.String())
-	if err != nil {
-		panic(err)
-	}
-	return decoded
-}
-
-func (id CertificateID) String() string {
-	return string(id)
-}
-
 // KVPair defines type for the key-value pair.
 type KVPair struct {
 	Key   string `json:"key"`
@@ -92,7 +76,7 @@ type RequestContent struct {
 
 // Certificate is the interface for all kinds of certificate
 type Certificate interface {
-	ID() CertificateID
+	ID() uint64
 	Type() CertificateType
 	Certifier() sdk.AccAddress
 	RequestContent() RequestContent
@@ -104,7 +88,7 @@ type Certificate interface {
 	Bytes(*codec.LegacyAmino) []byte
 	String() string
 
-	SetCertificateID(CertificateID)
+	SetCertificateID(uint64)
 	SetTxHash(string)
 }
 
@@ -119,7 +103,7 @@ var _ Certificate = CompilationCertificate{}
 
 // GeneralCertificate defines the type for general certificate.
 type GeneralCertificate struct {
-	CertID          CertificateID   `json:"certificate_id"`
+	CertID          uint64          `json:"certificate_id"`
 	CertType        CertificateType `json:"certificate_type"`
 	ReqContent      RequestContent  `json:"request_content"`
 	CertDescription string          `json:"description"`
@@ -128,7 +112,7 @@ type GeneralCertificate struct {
 }
 
 // ID returns ID of the certificate.
-func (c GeneralCertificate) ID() CertificateID {
+func (c GeneralCertificate) ID() uint64 {
 	return c.CertID
 }
 
@@ -182,12 +166,12 @@ func (c GeneralCertificate) String() string {
 		"Description: %s\n"+
 		"Certifier: %s\n"+
 		"TxHash: %s\n",
-		c.CertID.String(), c.ReqContent.RequestContent, c.CertificateContent(),
+		strconv.FormatUint(c.CertID, 10), c.ReqContent.RequestContent, c.CertificateContent(),
 		c.Description(), c.CertCertifier.String(), c.CertTxHash)
 }
 
 // SetCertificateID provides a method to set an ID for the certificate.
-func (c GeneralCertificate) SetCertificateID(id CertificateID) {
+func (c GeneralCertificate) SetCertificateID(id uint64) {
 	c.CertID = id
 }
 
@@ -205,7 +189,7 @@ type CompilationCertificateContent struct {
 // CompilationCertificate defines type for the compilation certificate.
 type CompilationCertificate struct {
 	IssueBlockHeight int64                         `json:"time_issued"`
-	CertID           CertificateID                 `json:"certificate_id"`
+	CertID           uint64                        `json:"certificate_id"`
 	CertType         CertificateType               `json:"certificate_type"`
 	ReqContent       RequestContent                `json:"request_content"`
 	CertContent      CompilationCertificateContent `json:"certificate_content"`
@@ -215,7 +199,7 @@ type CompilationCertificate struct {
 }
 
 // ID returns ID of the certificate.
-func (c CompilationCertificate) ID() CertificateID {
+func (c CompilationCertificate) ID() uint64 {
 	return c.CertID
 }
 
@@ -269,12 +253,12 @@ func (c CompilationCertificate) String() string {
 		"Description: %s\n"+
 		"Certifier: %s\n"+
 		"TxHash: %s\n",
-		c.CertID.String(), c.ReqContent.RequestContent, c.CertificateContent(),
+		strconv.FormatUint(c.CertID, 10), c.ReqContent.RequestContent, c.CertificateContent(),
 		c.Description(), c.CertCertifier.String(), c.CertTxHash)
 }
 
 // SetCertificateID provides a method to set an ID for the certificate.
-func (c CompilationCertificate) SetCertificateID(id CertificateID) {
+func (c CompilationCertificate) SetCertificateID(id uint64) {
 	c.CertID = id
 }
 
@@ -336,7 +320,7 @@ func migrateCert(oldGenState CertGenesisState) *certtypes.GenesisState {
 			RequestContent:     c.RequestContent().RequestContent,
 		}
 		newCert = &certtypes.GeneralCertificate{
-			CertId:          certtypes.CertificateID(c.ID()),
+			CertId:          c.ID(),
 			CertType:        certtypes.CertificateType(c.Type()),
 			ReqContent:      &reqContent,
 			CertDescription: c.Description(),

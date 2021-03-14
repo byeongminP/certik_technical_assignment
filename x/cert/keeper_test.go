@@ -16,95 +16,44 @@ import (
 	"github.com/certikfoundation/shentu/x/cert/types"
 )
 
-func Test_GetCertificateID(t *testing.T) {
-	t.Run("Testing GetCertificateID", func(t *testing.T) {
-		var certType types.CertificateType
-		var i uint8
-
-		certType = types.CertificateTypeFromString("COMPILATION")
-		certContent, err := types.NewRequestContent("ADDRESS", "sample_content")
-		require.NoError(t, err)
-		i = 5
-
-		id1 := types.GetCertificateID(certType, certContent, i)
-		i++
-		id2 := types.GetCertificateID(certType, certContent, i)
-
-		s1 := id1.String()
-		s2 := id2.String()
-
-		if s2 != s1[:len(s1)-1]+"6" {
-			t.Errorf("Some inconsistency in certificate store key construction")
-		}
-	})
-}
-
-func Test_GetNewCertificateID(t *testing.T) {
-	t.Run("Testing GetNewCertificateID", func(t *testing.T) {
+func Test_IssueAndRevokeCertificate(t *testing.T) {
+	t.Run("Testing issuing and revoking a certificate", func(t *testing.T) {
 		app := simapp.Setup(false)
 		ctx := app.BaseApp.NewContext(false, tmproto.Header{Time: time.Now().UTC()})
-		addrs := simapp.AddTestAddrs(app, ctx, 1, sdk.NewInt(10000))
+		certifier := simapp.AddTestAddrs(app, ctx, 1, sdk.NewInt(10000))[0]
+		app.CertKeeper.SetCertifier(ctx, types.NewCertifier(certifier, "", certifier, ""))
 
-		// Set and Get a certificate
-		c1 := types.NewCompilationCertificate(types.CertificateTypeCompilation, "sourcodehash0",
-			"compiler1", "bytecodehash1", "", addrs[0])
+		cert1 := types.NewCompilationCertificate(types.CertificateTypeCompilation,
+			"content1", "compiler1", "bytecodehash1", "description", certifier)
+		id1, err := app.CertKeeper.IssueCertificate(ctx, cert1)
+		require.NoError(t, err)
 
-		id1, err := app.CertKeeper.GetNewCertificateID(ctx, c1.Type(), c1.RequestContent())
-		if err != nil {
-			t.Errorf(err.Error())
-		}
+		cert2 := types.NewCompilationCertificate(types.CertificateTypeCompilation,
+			"content2", "compiler1", "bytecodehash1", "description", certifier)
+		id2, err := app.CertKeeper.IssueCertificate(ctx, cert2)
+		require.NoError(t, err)
 
-		c1.SetCertificateID(id1)
-		app.CertKeeper.SetCertificate(ctx, c1)
+		retrieved_cert, err := app.CertKeeper.GetCertificateByID(ctx, id1)
+		require.NoError(t, err)
+		require.True(t, reflect.DeepEqual(cert1, retrieved_cert))
 
-		data, err := app.CertKeeper.GetCertificateByID(ctx, id1)
-		if data == nil {
-			t.Errorf("Could not retrieve data from the store")
-		}
-		if !reflect.DeepEqual(data, c1) {
-			t.Errorf("Retrieved data different from the original data")
-		}
+		retrieved_ids := app.CertKeeper.GetCertifierCertIDs(ctx, certifier)
+		require.True(t, retrieved_ids[0] == id1 && retrieved_ids[1] == id2)
 
-		// Set an identical certificate
-		c2 := types.NewCompilationCertificate(types.CertificateTypeCompilation, "sourcodehash0",
-			"compiler1", "bytecodehash1", "", addrs[0])
-		id2, err := app.CertKeeper.GetNewCertificateID(ctx, c2.Type(), c2.RequestContent())
-		if err != nil {
-			t.Errorf(err.Error())
-		}
-		c2.SetCertificateID(id2)
-		app.CertKeeper.SetCertificate(ctx, c2)
+		contentCertID, found := app.CertKeeper.GetContentCertID(ctx, types.CertificateTypeCompilation, cert1.RequestContent())
+		require.True(t, found && contentCertID == id1)
 
-		data, err = app.CertKeeper.GetCertificateByID(ctx, id2)
-		if data == nil {
-			t.Errorf("Could not retrieve data from the store")
-		}
-		if !reflect.DeepEqual(data, c2) {
-			t.Errorf("Retrieved data different from the original data")
-		}
+		err = app.CertKeeper.RevokeCertificate(ctx, cert1, certifier)
+		require.NoError(t, err)
 
-		// Delete the first certificate and add the third certificate
-		id := c1.ID()
-		app.CertKeeper.DeleteCertificate(ctx, c1)
+		_, err = app.CertKeeper.GetCertificateByID(ctx, id1)
+		require.Error(t, err)
 
-		c3 := types.NewCompilationCertificate(types.CertificateTypeCompilation, "sourcodehash0",
-			"compiler1", "bytecodehash1", "", addrs[0])
-		id3, err := app.CertKeeper.GetNewCertificateID(ctx, c3.Type(), c3.RequestContent())
-		if err != nil {
-			t.Errorf(err.Error())
-		}
-		require.Equal(t, id, id3)
+		retrieved_ids = app.CertKeeper.GetCertifierCertIDs(ctx, certifier)
+		require.True(t, retrieved_ids[0] == id2)
 
-		c3.SetCertificateID(id3)
-		app.CertKeeper.SetCertificate(ctx, c3)
-
-		data, err = app.CertKeeper.GetCertificateByID(ctx, id3)
-		if data == nil {
-			t.Errorf("Could not retrieve data from the store")
-		}
-		if !reflect.DeepEqual(data, c3) {
-			t.Errorf("Retrieved data different from the original data")
-		}
+		_, found = app.CertKeeper.GetContentCertID(ctx, types.CertificateTypeCompilation, cert1.RequestContent())
+		require.True(t, !found)
 	})
 }
 
@@ -126,7 +75,7 @@ func Test_IterationByCertifier(t *testing.T) {
 		// Store certificates
 		addr0Count := 0
 		addr2Count := 0
-		for i := 1; i < 50000; i++ {
+		for i := 1; i < 500; i++ {
 			index := rand.Intn(4)
 			if index == 0 {
 				addr0Count++
@@ -153,69 +102,47 @@ func Test_CertificateQueries(t *testing.T) {
 	t.Run("Testing various queries on certifications", func(t *testing.T) {
 		app := simapp.Setup(false)
 		ctx := app.BaseApp.NewContext(false, tmproto.Header{Time: time.Now().UTC()})
-		addrs := simapp.AddTestAddrs(app, ctx, 5, sdk.NewInt(10000))
+		addrs := simapp.AddTestAddrs(app, ctx, 2, sdk.NewInt(10000))
 		for _, addr := range addrs {
 			app.CertKeeper.SetCertifier(ctx, types.NewCertifier(addr, "", addr, ""))
 		}
 
-		// Store certificates
-		count := 0
-		count2 := 0 // For counting certificates with given address and content
-		count3 := 0 // For counting certificates with given address
-		dupContent := "duplicate content"
-		totalCerts := 1000
-		for i := 1; i < totalCerts; i++ {
-			index := rand.Intn(4) // random address index
+		var cert *types.CompilationCertificate
+		content1, content2 := "duplicate content", "duplicate content 2"
 
-			var cert *types.CompilationCertificate
-			dup := rand.Intn(100)
-			if dup > 95 {
-				cert = types.NewCompilationCertificate(types.CertificateTypeCompilation, dupContent,
-					"compiler1", "bytecodehash1", "", addrs[index])
-				count++
-				if index == 0 {
-					count2++
-					count3++
-				}
+		count1 := 0 // number of certificates with duplicate content
+		count2 := 0 // number of certificates certified by addr[0]
+
+		for _, certType := range types.CertificateTypes {
+			index := rand.Intn(2) // random address index
+			if index == 1 {       // 50% - 50% between two contents
+				cert = types.NewCompilationCertificate(certType, content1, "compiler1", "bytecodehash1", "", addrs[index])
+				count1++
 			} else {
-				length := rand.Intn(10) + 10
-				s := randomString(length)
-				cert = types.NewCompilationCertificate(types.CertificateTypeCompilation, s, "compiler1",
-					"bytecodehash1", "", addrs[index])
-				if index == 0 {
-					count3++
-				}
+				cert = types.NewCompilationCertificate(certType, content2, "compiler1", "bytecodehash1", "", addrs[index])
+			}
+			if index == 0 { // addr[0] certifier
+				count2++
 			}
 			_, err := app.CertKeeper.IssueCertificate(ctx, cert)
 			require.NoError(t, err)
 		}
 
 		// Test GetCertificatesByContent()
-		contentToFind, _ := types.NewRequestContent("sourcecodehash", dupContent)
+		contentToFind, _ := types.NewRequestContent("sourcecodehash", content1)
 		certs := app.CertKeeper.GetCertificatesByContent(ctx, contentToFind)
-		require.Equal(t, count, len(certs))
+		require.Equal(t, count1, len(certs))
 
 		// Test GetCertificatesFiltered()
-		// Query by content only
-		queryParams := types.NewQueryCertificatesParams(1, totalCerts, nil, "sourcecodehash", dupContent)
-		total, certs, err := app.CertKeeper.GetCertificatesFiltered(ctx, queryParams)
+		queryParams := types.NewQueryCertificatesParams(1, 100, nil, "sourcecodehash", content1)
+		_, certs_filtered, err := app.CertKeeper.GetCertificatesFiltered(ctx, queryParams)
 		require.NoError(t, err)
-		require.Equal(t, uint64(count), total)
-		require.Equal(t, count, len(certs))
+		reflect.DeepEqual(certs, certs_filtered)
 
-		// Query by content and certifier
-		queryParams = types.NewQueryCertificatesParams(1, totalCerts, addrs[0], "sourcecodehash", dupContent)
-		total, certs, err = app.CertKeeper.GetCertificatesFiltered(ctx, queryParams)
+		queryParams = types.NewQueryCertificatesParams(1, 100, addrs[0], "", "")
+		_, certs, err = app.CertKeeper.GetCertificatesFiltered(ctx, queryParams)
 		require.NoError(t, err)
-		require.Equal(t, uint64(count2), total)
 		require.Equal(t, count2, len(certs))
-
-		// Query by certifier only
-		queryParams = types.NewQueryCertificatesParams(1, totalCerts, addrs[0], "", "")
-		total, certs, err = app.CertKeeper.GetCertificatesFiltered(ctx, queryParams)
-		require.NoError(t, err)
-		require.Equal(t, uint64(count3), total)
-		require.Equal(t, count3, len(certs))
 	})
 }
 

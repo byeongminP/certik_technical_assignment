@@ -200,6 +200,9 @@ func SimulateMsgCertifyAuditing(ak types.AccountKeeper, bk types.BankKeeper, k k
 		description := simtypes.RandStringOfLength(r, 10)
 
 		msg := types.NewMsgCertifyGeneral("auditing", "address", contract.Address.String(), description, certifierAddr)
+		if k.IsCertified(ctx, "address", contract.Address.String(), "auditing") {
+			return simtypes.NoOpMsg(types.ModuleName, msg.Type(), err.Error()), nil, nil
+		}
 
 		account := ak.GetAccount(ctx, certifierAddr)
 		fees, err := simtypes.RandomFees(r, ctx, bk.SpendableCoins(ctx, account.GetAddress()))
@@ -252,6 +255,9 @@ func SimulateMsgCertifyProof(ak types.AccountKeeper, bk types.BankKeeper, k keep
 		description := simtypes.RandStringOfLength(r, 10)
 
 		msg := types.NewMsgCertifyGeneral("proof", "address", contract.Address.String(), description, certifierAddr)
+		if k.IsCertified(ctx, "address", contract.Address.String(), "proof") {
+			return simtypes.NoOpMsg(types.ModuleName, msg.Type(), err.Error()), nil, nil
+		}
 
 		account := ak.GetAccount(ctx, certifierAddr)
 		fees, err := simtypes.RandomFees(r, ctx, bk.SpendableCoins(ctx, account.GetAddress()))
@@ -308,6 +314,9 @@ func SimulateMsgCertifyIdentity(ak types.AccountKeeper, bk types.BankKeeper, k k
 		identityAcc := ak.GetAccount(ctx, delAddr)
 
 		msg := types.NewMsgCertifyGeneral("identity", "address", identityAcc.GetAddress().String(), "", certifierAddr)
+		if k.IsCertified(ctx, "address", identityAcc.GetAddress().String(), "identity") {
+			return simtypes.NoOpMsg(types.ModuleName, msg.Type(), err.Error()), nil, nil
+		}
 
 		account := ak.GetAccount(ctx, certifierAddr)
 		fees, err := simtypes.RandomFees(r, ctx, bk.SpendableCoins(ctx, account.GetAddress()))

@@ -2,6 +2,7 @@ package simulation
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/types/kv"
@@ -10,6 +11,24 @@ import (
 
 	"github.com/certikfoundation/shentu/x/cert/types"
 )
+
+// DecodeCertID converts the binary representation of cert id into an uint64 value.
+func DecodeCertID(bz []byte) uint64 {
+	if bz == nil {
+		return 0
+	}
+	id := binary.LittleEndian.Uint64(bz)
+	return id
+}
+
+// DecodeCertIDs converts the binary representation of cert ids into []uint64.
+func DecodeCertIDs(bz []byte) []uint64 {
+	data := make([]uint64, len(bz)/8)
+	for i := range data {
+		data[i] = binary.LittleEndian.Uint64(bz[8*i:])
+	}
+	return data
+}
 
 // NewDecodeStore unmarshals the KVPair's Value to the corresponding type of cert module.
 func NewDecodeStore(cdc codec.Marshaler) func(kvA, kvB kv.Pair) string {
@@ -56,6 +75,16 @@ func NewDecodeStore(cdc codec.Marshaler) func(kvA, kvB kv.Pair) string {
 			cdc.MustUnmarshalBinaryLengthPrefixed(kvA.Value, &certifierA)
 			cdc.MustUnmarshalBinaryLengthPrefixed(kvB.Value, &certifierB)
 			return fmt.Sprintf("%v\n%v", certifierA, certifierB)
+
+		case bytes.Equal(kvA.Key[:1], types.NextCertificateIDKey()), bytes.Equal(kvA.Key[:1], types.ContentCertIDStoreKeyPrefix):
+			idA := DecodeCertID(kvA.Value)
+			idB := DecodeCertID(kvB.Value)
+			return fmt.Sprintf("%v\n%v", idA, idB)
+
+		case bytes.Equal(kvA.Key[:1], types.CertifierCertIDsStoreKeyPrefix):
+			idsA := DecodeCertIDs(kvA.Value)
+			idsB := DecodeCertIDs(kvB.Value)
+			return fmt.Sprintf("%v\n%v", idsA, idsB)
 
 		default:
 			panic(fmt.Sprintf("invalid %s key prefix %X", types.ModuleName, kvA.Key[:1]))

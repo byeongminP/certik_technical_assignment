@@ -1,6 +1,8 @@
 package cert
 
 import (
+	"sort"
+
 	"github.com/gogo/protobuf/proto"
 
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -53,11 +55,16 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, data types.GenesisState) {
 
 		k.SetValidator(ctx, pk, certifierAddr)
 	}
+	sort.Slice(certificates, func(i, j int) bool {
+		return certificates[i].GetCachedValue().(types.Certificate).ID() < certificates[j].GetCachedValue().(types.Certificate).ID()
+	})
 	for _, certificateAny := range certificates {
 		certificate, ok := certificateAny.GetCachedValue().(types.Certificate)
 		if !ok {
 			panic(sdkerrors.Wrapf(sdkerrors.ErrUnpackAny, "cannot unpack Any into Certificate %T", certificateAny))
 		}
+		k.AddCertIDToCertifier(ctx, certificate.Certifier(), certificate.ID())
+		k.SetContentCertID(ctx, certificate.Type(), certificate.RequestContent(), certificate.ID())
 		k.SetCertificate(ctx, certificate)
 	}
 	for _, library := range libraries {
@@ -71,6 +78,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, data types.GenesisState) {
 		}
 		k.SetLibrary(ctx, libAddr, publisherAddr)
 	}
+	k.SetNextCertificateID(ctx, data.NextCertificateID)
 }
 
 // ExportGenesis writes the current store values to a genesis file, which can be imported again with InitGenesis.
@@ -80,6 +88,7 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	platforms := k.GetAllPlatforms(ctx)
 	certificates := k.GetAllCertificates(ctx)
 	libraries := k.GetAllLibraries(ctx)
+	nextCertID := k.GetNextCertificateID(ctx)
 
 	certificateAnys := make([]*codectypes.Any, len(certificates))
 	for i, certificate := range certificates {
@@ -95,10 +104,11 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	}
 
 	return &types.GenesisState{
-		Certifiers:   certifiers,
-		Validators:   validators,
-		Platforms:    platforms,
-		Certificates: certificateAnys,
-		Libraries:    libraries,
+		Certifiers:        certifiers,
+		Validators:        validators,
+		Platforms:         platforms,
+		Certificates:      certificateAnys,
+		Libraries:         libraries,
+		NextCertificateID: nextCertID,
 	}
 }
